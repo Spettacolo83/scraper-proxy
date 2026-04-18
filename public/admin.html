@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scraper Proxy Admin</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #e0e0e0; min-height: 100vh; }
+  .login-container { display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+  .login-box { background: #16213e; padding: 2rem; border-radius: 8px; width: 320px; }
+  .login-box h2 { margin-bottom: 1rem; color: #4ecca3; }
+  input, button { width: 100%; padding: 0.6rem; margin: 0.3rem 0; border: 1px solid #333; border-radius: 4px; font-size: 14px; }
+  input { background: #0f3460; color: #e0e0e0; }
+  input:focus { outline: none; border-color: #4ecca3; }
+  button { background: #4ecca3; color: #1a1a2e; border: none; cursor: pointer; font-weight: bold; }
+  button:hover { background: #3ba88a; }
+  button.danger { background: #e74c3c; color: white; }
+  button.danger:hover { background: #c0392b; }
+  button.small { width: auto; padding: 0.3rem 0.8rem; font-size: 12px; }
+  .dashboard { max-width: 900px; margin: 0 auto; padding: 1rem; }
+  .header { display: flex; justify-content: space-between; align-items: center; padding: 1rem 0; border-bottom: 1px solid #333; margin-bottom: 1rem; }
+  .header h1 { color: #4ecca3; font-size: 1.4rem; }
+  .section { background: #16213e; border-radius: 8px; padding: 1.2rem; margin-bottom: 1rem; }
+  .section h3 { color: #4ecca3; margin-bottom: 0.8rem; font-size: 1rem; }
+  .row { display: flex; gap: 0.5rem; align-items: center; margin: 0.4rem 0; flex-wrap: wrap; }
+  .tag { background: #0f3460; padding: 0.3rem 0.6rem; border-radius: 4px; font-family: monospace; font-size: 13px; display: inline-flex; align-items: center; gap: 0.4rem; margin: 0.2rem; }
+  .tag .remove { cursor: pointer; color: #e74c3c; font-weight: bold; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; font-family: monospace; }
+  th, td { padding: 0.4rem 0.6rem; text-align: left; border-bottom: 1px solid #333; }
+  th { color: #4ecca3; }
+  .status-ok { color: #4ecca3; }
+  .status-err { color: #e74c3c; }
+  .badge { background: #4ecca3; color: #1a1a2e; padding: 0.15rem 0.5rem; border-radius: 10px; font-size: 11px; font-weight: bold; }
+  .badge.off { background: #666; }
+  .inline-form { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+  .inline-form input { width: auto; flex: 1; }
+  .inline-form button { width: auto; }
+  .hidden { display: none; }
+  .msg { padding: 0.5rem; border-radius: 4px; margin: 0.5rem 0; font-size: 13px; }
+  .msg.ok { background: #1a4a3a; color: #4ecca3; }
+  .msg.err { background: #4a1a1a; color: #e74c3c; }
+</style>
+</head>
+<body>
+<div id="login" class="login-container">
+  <div class="login-box">
+    <h2>Scraper Proxy</h2>
+    <input type="text" id="username" placeholder="Username" autocomplete="username">
+    <input type="password" id="password" placeholder="Password" autocomplete="current-password">
+    <button onclick="login()">Login</button>
+    <div id="login-msg"></div>
+  </div>
+</div>
+<div id="dashboard" class="dashboard hidden">
+  <div class="header">
+    <h1>Scraper Proxy Admin</h1>
+    <button class="small danger" onclick="logout()">Logout</button>
+  </div>
+  <div class="section">
+    <h3>API Keys</h3>
+    <div id="keys-list"></div>
+    <div class="inline-form">
+      <input type="text" id="new-key-name" placeholder="Nome chiave (es. Job Monitor)">
+      <button class="small" onclick="addKey()">+ Aggiungi</button>
+    </div>
+  </div>
+  <div class="section">
+    <h3>Rate Limiting</h3>
+    <div class="row">
+      <label>Max richieste/min:</label>
+      <input type="number" id="rate-rpm" style="width:80px">
+      <label>Max concorrenti:</label>
+      <input type="number" id="rate-concurrent" style="width:80px">
+      <button class="small" onclick="saveRateLimit()">Salva</button>
+    </div>
+  </div>
+  <div class="section">
+    <h3>Whitelist Domini <span id="wl-badge"></span></h3>
+    <div id="whitelist-list"></div>
+    <div class="inline-form">
+      <input type="text" id="new-domain" placeholder="es. indeed.com">
+      <button class="small" onclick="addDomain()">+ Aggiungi</button>
+    </div>
+  </div>
+  <div class="section">
+    <h3>Credenziali Admin</h3>
+    <div class="row">
+      <input type="text" id="admin-user" placeholder="Username" style="width:200px">
+      <input type="password" id="admin-pass" placeholder="Nuova password" style="width:200px">
+      <button class="small" onclick="saveAdmin()">Aggiorna</button>
+    </div>
+    <div id="admin-msg"></div>
+  </div>
+  <div class="section">
+    <h3>Log Richieste (ultime 100)</h3>
+    <table>
+      <thead><tr><th>Timestamp</th><th>URL</th><th>API Key</th><th>Status</th><th>ms</th></tr></thead>
+      <tbody id="logs-body"></tbody>
+    </table>
+  </div>
+</div>
+<script>
+let cfg = {};
+async function api(method, path, body) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(path, opts);
+  if (r.status === 401 && path !== '/admin/login') { showLogin(); return null; }
+  return r.json();
+}
+function showLogin() {
+  document.getElementById('login').classList.remove('hidden');
+  document.getElementById('dashboard').classList.add('hidden');
+}
+function showDashboard() {
+  document.getElementById('login').classList.add('hidden');
+  document.getElementById('dashboard').classList.remove('hidden');
+  loadConfig();
+  loadLogs();
+}
+async function login() {
+  const u = document.getElementById('username').value;
+  const p = document.getElementById('password').value;
+  const r = await api('POST', '/admin/login', { username: u, password: p });
+  if (r && r.success) showDashboard();
+  else document.getElementById('login-msg').innerHTML = '<div class="msg err">Credenziali errate</div>';
+}
+async function logout() { await api('POST', '/admin/logout'); showLogin(); }
+async function loadConfig() {
+  cfg = await api('GET', '/admin/api/config');
+  if (!cfg) return;
+  renderKeys();
+  document.getElementById('rate-rpm').value = cfg.rate_limit.max_requests_per_minute;
+  document.getElementById('rate-concurrent').value = cfg.rate_limit.max_concurrent;
+  renderWhitelist();
+  document.getElementById('admin-user').value = cfg.admin.username;
+}
+function renderKeys() {
+  const el = document.getElementById('keys-list');
+  el.innerHTML = cfg.api_keys.map((k, i) =>
+    '<div class="row"><span class="tag">' + k.name + ': <code>' + k.key + '</code> <span class="remove" onclick="removeKey(' + i + ')">&#x2715;</span></span></div>'
+  ).join('');
+}
+function renderWhitelist() {
+  const el = document.getElementById('whitelist-list');
+  const badge = document.getElementById('wl-badge');
+  if (cfg.whitelist.length === 0) {
+    badge.innerHTML = '<span class="badge off">OFF &mdash; tutti i domini</span>';
+    el.innerHTML = '<p style="font-size:13px;color:#888">Nessuna restrizione attiva</p>';
+  } else {
+    badge.innerHTML = '<span class="badge">ON</span>';
+    el.innerHTML = cfg.whitelist.map((d, i) =>
+      '<span class="tag">' + d + ' <span class="remove" onclick="removeDomain(' + i + ')">&#x2715;</span></span> '
+    ).join('');
+  }
+}
+async function addKey() {
+  const name = document.getElementById('new-key-name').value.trim();
+  if (!name) return;
+  const arr = new Uint8Array(16);
+  crypto.getRandomValues(arr);
+  const key = 'sk-' + Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
+  cfg.api_keys.push({ key, name, created: new Date().toISOString().split('T')[0] });
+  await api('PUT', '/admin/api/config', { api_keys: cfg.api_keys });
+  document.getElementById('new-key-name').value = '';
+  loadConfig();
+}
+async function removeKey(index) {
+  if (cfg.api_keys.length <= 1) { alert('Serve almeno una API key'); return; }
+  cfg.api_keys.splice(index, 1);
+  await api('PUT', '/admin/api/config', { api_keys: cfg.api_keys });
+  loadConfig();
+}
+async function saveRateLimit() {
+  const rpm = parseInt(document.getElementById('rate-rpm').value);
+  const conc = parseInt(document.getElementById('rate-concurrent').value);
+  await api('PUT', '/admin/api/config', { rate_limit: { max_requests_per_minute: rpm, max_concurrent: conc } });
+  loadConfig();
+}
+async function addDomain() {
+  const d = document.getElementById('new-domain').value.trim().toLowerCase();
+  if (!d) return;
+  cfg.whitelist.push(d);
+  await api('PUT', '/admin/api/config', { whitelist: cfg.whitelist });
+  document.getElementById('new-domain').value = '';
+  loadConfig();
+}
+async function removeDomain(index) {
+  cfg.whitelist.splice(index, 1);
+  await api('PUT', '/admin/api/config', { whitelist: cfg.whitelist });
+  loadConfig();
+}
+async function saveAdmin() {
+  const u = document.getElementById('admin-user').value.trim();
+  const p = document.getElementById('admin-pass').value;
+  const updates = { admin: { username: u } };
+  if (p) updates.admin.password = p;
+  else updates.admin.password = '********';
+  await api('PUT', '/admin/api/config', updates);
+  document.getElementById('admin-msg').innerHTML = '<div class="msg ok">Aggiornato</div>';
+  setTimeout(() => document.getElementById('admin-msg').innerHTML = '', 3000);
+}
+async function loadLogs() {
+  const logs = await api('GET', '/admin/api/logs');
+  if (!logs) return;
+  const el = document.getElementById('logs-body');
+  el.innerHTML = logs.map(l => {
+    const st = (l.status === 'error' || l.status >= 400) ? 'status-err' : 'status-ok';
+    const url = l.url.length > 60 ? l.url.substring(0, 60) + '...' : l.url;
+    return '<tr><td>' + l.timestamp.replace('T',' ').substring(0,19) + '</td><td>' + url + '</td><td>' + (l.api_key||'-') + '</td><td class="' + st + '">' + l.status + '</td><td>' + l.elapsed_ms + '</td></tr>';
+  }).join('');
+}
+setInterval(loadLogs, 10000);
+api('GET', '/admin/api/config').then(r => { if (r) showDashboard(); });
+</script>
+</body>
+</html>
