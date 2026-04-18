@@ -141,6 +141,7 @@ async function triggerApplicationRoutine(jobId) {
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
+        'anthropic-version': '2023-06-01',
         'anthropic-beta': 'experimental-cc-routine-2026-04-01',
         'Content-Length': Buffer.byteLength(data)
       }
