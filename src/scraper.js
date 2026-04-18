@@ -37,9 +37,31 @@ async function fetchPage(url, format = 'html') {
       timeout: cfg.timeout_ms
     });
 
-    await page.waitForTimeout(cfg.wait_after_load_ms);
+    // Wait for Cloudflare challenge to resolve
+    // Strategy: wait for the "Just a moment" title to disappear,
+    // or fall back to fixed wait if no Cloudflare challenge detected
+    try {
+      const title = await page.title();
+      if (title.includes('Just a moment') || title.includes('Checking')) {
+        // Cloudflare detected — wait up to 15 seconds for it to resolve
+        await page.waitForFunction(
+          () => !document.title.includes('Just a moment') && !document.title.includes('Checking'),
+          { timeout: 15000 }
+        );
+        // Extra wait after challenge resolves for page to fully load
+        await page.waitForTimeout(2000);
+      } else {
+        // No Cloudflare, just wait the configured time
+        await page.waitForTimeout(cfg.wait_after_load_ms);
+      }
+    } catch {
+      // Cloudflare challenge didn't resolve in time, continue with what we have
+      await page.waitForTimeout(cfg.wait_after_load_ms);
+    }
 
     const statusCode = response ? response.status() : 0;
+    // Get final status after potential redirects
+    const finalUrl = page.url();
     let content;
 
     if (format === 'text') {
@@ -53,6 +75,7 @@ async function fetchPage(url, format = 'html') {
     return {
       success: true,
       url,
+      final_url: finalUrl,
       [format === 'text' ? 'text' : 'html']: content,
       status_code: statusCode,
       elapsed_ms: elapsed

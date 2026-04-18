@@ -16,8 +16,8 @@
   },
   "whitelist": [],
   "browser": {
-    "timeout_ms": 30000,
-    "wait_after_load_ms": 2000,
+    "timeout_ms": 45000,
+    "wait_after_load_ms": 3000,
     "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
   }
 }
