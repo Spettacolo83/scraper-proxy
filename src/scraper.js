@@ -1,15 +1,23 @@
-const { chromium } = require('playwright');
+const { chromium } = require('playwright-extra');
+const stealth = require('puppeteer-extra-plugin-stealth');
 const config = require('./config');
+
+// Apply stealth plugin to bypass bot detection
+chromium.use(stealth());
 
 let browser = null;
 
 async function launch() {
-  const cfg = config.get().browser;
   browser = await chromium.launch({
     headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-blink-features=AutomationControlled'
+    ]
   });
-  console.log('Browser launched');
+  console.log('Browser launched (with stealth)');
   browser.on('disconnected', () => {
     console.log('Browser disconnected, relaunching...');
     browser = null;
@@ -25,7 +33,9 @@ async function fetchPage(url, format = 'html') {
   const cfg = config.get().browser;
   const context = await browser.newContext({
     userAgent: cfg.user_agent,
-    viewport: { width: 1280, height: 720 }
+    viewport: { width: 1280, height: 720 },
+    locale: 'en-US',
+    timezoneId: 'Europe/Madrid'
   });
 
   const page = await context.newPage();
@@ -38,29 +48,26 @@ async function fetchPage(url, format = 'html') {
     });
 
     // Wait for Cloudflare challenge to resolve
-    // Strategy: wait for the "Just a moment" title to disappear,
-    // or fall back to fixed wait if no Cloudflare challenge detected
     try {
       const title = await page.title();
       if (title.includes('Just a moment') || title.includes('Checking')) {
-        // Cloudflare detected — wait up to 15 seconds for it to resolve
+        console.log(`Cloudflare detected for ${url}, waiting up to 20s...`);
         await page.waitForFunction(
           () => !document.title.includes('Just a moment') && !document.title.includes('Checking'),
-          { timeout: 15000 }
+          { timeout: 20000 }
         );
-        // Extra wait after challenge resolves for page to fully load
-        await page.waitForTimeout(2000);
+        // Extra wait after challenge resolves
+        await page.waitForTimeout(3000);
+        console.log(`Cloudflare resolved for ${url}`);
       } else {
-        // No Cloudflare, just wait the configured time
         await page.waitForTimeout(cfg.wait_after_load_ms);
       }
     } catch {
-      // Cloudflare challenge didn't resolve in time, continue with what we have
+      console.log(`Cloudflare challenge did not resolve for ${url}`);
       await page.waitForTimeout(cfg.wait_after_load_ms);
     }
 
     const statusCode = response ? response.status() : 0;
-    // Get final status after potential redirects
     const finalUrl = page.url();
     let content;
 
