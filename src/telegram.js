@@ -94,19 +94,86 @@ async function handleWebhook(req, res) {
 }
 
 async function queueApplication(jobId, chatId, messageText) {
+  // Write to GitHub repo so the Routine can read it
+  const REPO = 'Spettacolo83/job-monitor';
+  const FILE_PATH = 'data/application_queue.json';
   const cfg = config.get();
-  const queue = cfg.application_queue || [];
+  const ghToken = cfg.github_token || process.env.GITHUB_TOKEN;
 
-  queue.push({
-    job_id: jobId,
-    chat_id: chatId,
-    message_text: messageText,
-    requested_at: new Date().toISOString(),
-    status: 'pending'
+  if (!ghToken) {
+    console.log('GitHub token not configured — saving queue locally only');
+    const queue = cfg.application_queue || [];
+    queue.push({ job_id: jobId, chat_id: chatId, message_text: messageText, requested_at: new Date().toISOString(), status: 'pending' });
+    config.update({ application_queue: queue });
+    return;
+  }
+
+  try {
+    // Get current file from GitHub
+    const getFile = await githubApi('GET', `/repos/${REPO}/contents/${FILE_PATH}?ref=main`, null, ghToken);
+    const currentContent = JSON.parse(Buffer.from(getFile.content, 'base64').toString());
+    const sha = getFile.sha;
+
+    // Add new job to queue
+    currentContent.queue.push({
+      job_id: jobId,
+      chat_id: String(chatId),
+      message_text: messageText,
+      requested_at: new Date().toISOString(),
+      status: 'pending'
+    });
+
+    // Update file on GitHub
+    const newContent = Buffer.from(JSON.stringify(currentContent, null, 2)).toString('base64');
+    await githubApi('PUT', `/repos/${REPO}/contents/${FILE_PATH}`, {
+      message: `chore: queue application for ${jobId}`,
+      content: newContent,
+      sha: sha,
+      branch: 'main'
+    }, ghToken);
+
+    console.log(`Application queued on GitHub: ${jobId}`);
+  } catch (e) {
+    console.log(`Failed to queue on GitHub: ${e.message}. Saving locally.`);
+    const queue = cfg.application_queue || [];
+    queue.push({ job_id: jobId, chat_id: chatId, message_text: messageText, requested_at: new Date().toISOString(), status: 'pending' });
+    config.update({ application_queue: queue });
+  }
+}
+
+function githubApi(method, path, body, token) {
+  return new Promise((resolve, reject) => {
+    const data = body ? JSON.stringify(body) : '';
+    const opts = {
+      hostname: 'api.github.com',
+      path: path,
+      method: method,
+      headers: {
+        'Authorization': `token ${token}`,
+        'User-Agent': 'scraper-proxy',
+        'Accept': 'application/vnd.github.v3+json'
+      }
+    };
+    if (body) {
+      opts.headers['Content-Type'] = 'application/json';
+      opts.headers['Content-Length'] = Buffer.byteLength(data);
+    }
+
+    const req = https.request(opts, (res) => {
+      let responseBody = '';
+      res.on('data', chunk => responseBody += chunk);
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(responseBody);
+          if (res.statusCode >= 400) reject(new Error(`GitHub API ${res.statusCode}: ${parsed.message || responseBody}`));
+          else resolve(parsed);
+        } catch { reject(new Error(`GitHub API: invalid response`)); }
+      });
+    });
+    req.on('error', reject);
+    if (body) req.write(data);
+    req.end();
   });
-
-  config.update({ application_queue: queue });
-  console.log(`Application queued: ${jobId}`);
 }
 
 async function storeUserResponse(chatId, response, originalQuestion) {
