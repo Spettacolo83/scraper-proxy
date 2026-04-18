@@ -86,6 +86,19 @@
     </div>
   </div>
   <div class="section">
+    <h3>Account Siti</h3>
+    <div id="credentials-list"></div>
+    <div style="margin-top:0.8rem;">
+      <div class="row">
+        <input type="text" id="cred-site" placeholder="Sito (es. Indeed)" style="width:160px">
+        <input type="text" id="cred-user" placeholder="Username / Email" style="width:200px">
+        <input type="password" id="cred-pass" placeholder="Password" style="width:160px">
+        <button class="small" onclick="addCredential()">+ Aggiungi</button>
+      </div>
+    </div>
+    <div id="credentials-msg"></div>
+  </div>
+  <div class="section">
     <h3>Credenziali Admin</h3>
     <div class="row">
       <input type="text" id="admin-user" placeholder="Username" style="width:200px">
@@ -136,6 +149,7 @@ async function loadConfig() {
   document.getElementById('rate-rpm').value = cfg.rate_limit.max_requests_per_minute;
   document.getElementById('rate-concurrent').value = cfg.rate_limit.max_concurrent;
   renderWhitelist();
+  renderCredentials();
   document.getElementById('admin-user').value = cfg.admin.username;
 }
 function renderKeys() {
@@ -192,6 +206,49 @@ async function addDomain() {
 async function removeDomain(index) {
   cfg.whitelist.splice(index, 1);
   await api('PUT', '/admin/api/config', { whitelist: cfg.whitelist });
+  loadConfig();
+}
+function renderCredentials() {
+  const el = document.getElementById('credentials-list');
+  const creds = cfg.site_credentials || [];
+  if (creds.length === 0) {
+    el.innerHTML = '<p style="font-size:13px;color:#888">Nessuna credenziale salvata</p>';
+    return;
+  }
+  el.innerHTML = '<table><thead><tr><th>Sito</th><th>Username</th><th>Password</th><th></th></tr></thead><tbody>' +
+    creds.map((c, i) =>
+      '<tr>' +
+      '<td><span class="tag">' + escHtml(c.site) + '</span></td>' +
+      '<td><code style="font-size:12px">' + escHtml(c.username) + '</code></td>' +
+      '<td><code style="font-size:12px;letter-spacing:2px">*****</code></td>' +
+      '<td><button class="small danger" onclick="removeCredential(' + i + ')">Rimuovi</button></td>' +
+      '</tr>'
+    ).join('') +
+    '</tbody></table>';
+}
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+async function addCredential() {
+  const site = document.getElementById('cred-site').value.trim();
+  const username = document.getElementById('cred-user').value.trim();
+  const password = document.getElementById('cred-pass').value;
+  if (!site || !username || !password) { alert('Compila tutti i campi'); return; }
+  if (!cfg.site_credentials) cfg.site_credentials = [];
+  cfg.site_credentials.push({ site, username, password });
+  await api('PUT', '/admin/api/config', { site_credentials: cfg.site_credentials });
+  document.getElementById('cred-site').value = '';
+  document.getElementById('cred-user').value = '';
+  document.getElementById('cred-pass').value = '';
+  const msg = document.getElementById('credentials-msg');
+  msg.innerHTML = '<div class="msg ok">Credenziale aggiunta</div>';
+  setTimeout(() => msg.innerHTML = '', 3000);
+  loadConfig();
+}
+async function removeCredential(index) {
+  if (!cfg.site_credentials) return;
+  cfg.site_credentials.splice(index, 1);
+  await api('PUT', '/admin/api/config', { site_credentials: cfg.site_credentials });
   loadConfig();
 }
 async function saveAdmin() {
