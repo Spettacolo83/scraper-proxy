@@ -199,6 +199,11 @@ async function start() {
     if (cfg.residential_proxy && cfg.residential_proxy.enabled) {
       console.log(`Residential proxy: ${cfg.residential_proxy.url} (${cfg.residential_proxy.domains.length} domains)`);
     }
+
+    // Start Telegram long polling (more reliable than webhooks)
+    if (cfg.telegram_bot_token || process.env.TELEGRAM_BOT_TOKEN) {
+      telegram.startPolling();
+    }
   });
 }
 

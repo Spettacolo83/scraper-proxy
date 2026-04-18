@@ -131,4 +131,109 @@ async function registerWebhook(webhookUrl) {
   return result;
 }
 
-module.exports = { handleWebhook, registerWebhook, sendTelegramRequest };
+// Long polling fallback — polls Telegram for updates every 2 seconds
+// Used when webhook registration fails (e.g., HTTPS issues)
+let pollingActive = false;
+let lastUpdateId = 0;
+
+async function startPolling() {
+  if (pollingActive) return;
+  pollingActive = true;
+
+  // Delete any existing webhook first
+  await sendTelegramRequest('deleteWebhook', {});
+  console.log('Telegram: started long polling');
+
+  pollLoop();
+}
+
+async function pollLoop() {
+  if (!pollingActive) return;
+
+  try {
+    const result = await sendTelegramRequest('getUpdates', {
+      offset: lastUpdateId + 1,
+      timeout: 30,
+      allowed_updates: ['callback_query', 'message']
+    });
+
+    if (result && result.ok && result.result && result.result.length > 0) {
+      for (const update of result.result) {
+        lastUpdateId = update.update_id;
+        // Process using the same handler logic
+        await processUpdate(update);
+      }
+    }
+  } catch (e) {
+    console.log(`Telegram polling error: ${e.message}`);
+  }
+
+  // Poll again after a short delay
+  setTimeout(pollLoop, 1000);
+}
+
+async function processUpdate(update) {
+  // Reuse the same logic as handleWebhook but without req/res
+  if (update.callback_query) {
+    const callbackData = update.callback_query.data;
+    const chatId = update.callback_query.message.chat.id;
+    const messageId = update.callback_query.message.message_id;
+
+    console.log(`Telegram callback: ${callbackData} from chat ${chatId}`);
+
+    if (callbackData.startsWith('apply_')) {
+      const jobId = callbackData.replace('apply_', '');
+
+      await sendTelegramRequest('answerCallbackQuery', {
+        callback_query_id: update.callback_query.id,
+        text: 'Candidatura in coda!'
+      });
+
+      await sendTelegramRequest('editMessageReplyMarkup', {
+        chat_id: chatId,
+        message_id: messageId,
+        reply_markup: { inline_keyboard: [[{ text: '📝 In coda...', callback_data: 'noop' }]] }
+      });
+
+      await queueApplication(jobId, chatId, update.callback_query.message.text);
+
+    } else if (callbackData.startsWith('ignore_')) {
+      await sendTelegramRequest('answerCallbackQuery', {
+        callback_query_id: update.callback_query.id,
+        text: 'Ignorato'
+      });
+      await sendTelegramRequest('editMessageReplyMarkup', {
+        chat_id: chatId,
+        message_id: messageId,
+        reply_markup: { inline_keyboard: [[{ text: '❌ Ignorato', callback_data: 'noop' }]] }
+      });
+
+    } else if (callbackData === 'noop') {
+      await sendTelegramRequest('answerCallbackQuery', {
+        callback_query_id: update.callback_query.id
+      });
+    }
+  }
+
+  if (update.message && update.message.text && update.message.reply_to_message) {
+    const chatId = update.message.chat.id;
+    const responseText = update.message.text;
+    const originalMessage = update.message.reply_to_message.text || '';
+
+    console.log(`Telegram response: "${responseText}" to question`);
+
+    await storeUserResponse(chatId, responseText, originalMessage);
+
+    await sendTelegramRequest('sendMessage', {
+      chat_id: chatId,
+      text: '✅ Risposta salvata! La candidatura riprenderà a breve.',
+      reply_to_message_id: update.message.message_id
+    });
+  }
+}
+
+function stopPolling() {
+  pollingActive = false;
+}
+
+module.exports = { handleWebhook, registerWebhook, sendTelegramRequest, startPolling, stopPolling };
