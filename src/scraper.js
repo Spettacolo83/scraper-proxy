@@ -1,23 +1,16 @@
-const { chromium } = require('playwright-extra');
-const stealth = require('puppeteer-extra-plugin-stealth');
+const { firefox, chromium } = require('playwright');
 const config = require('./config');
-
-// Apply stealth plugin to bypass bot detection
-chromium.use(stealth());
 
 let browser = null;
 
 async function launch() {
-  browser = await chromium.launch({
+  // Use Firefox — it bypasses Cloudflare better than Chromium
+  // Firefox doesn't expose WebDriver/automation flags that Cloudflare detects
+  browser = await firefox.launch({
     headless: true,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-blink-features=AutomationControlled'
-    ]
+    args: []
   });
-  console.log('Browser launched (with stealth)');
+  console.log('Firefox browser launched');
   browser.on('disconnected', () => {
     console.log('Browser disconnected, relaunching...');
     browser = null;
@@ -50,11 +43,14 @@ async function fetchPage(url, format = 'html') {
     // Wait for Cloudflare challenge to resolve
     try {
       const title = await page.title();
-      if (title.includes('Just a moment') || title.includes('Checking')) {
-        console.log(`Cloudflare detected for ${url}, waiting up to 20s...`);
+      if (title.includes('Just a moment') || title.includes('Checking') || title.includes('Attention')) {
+        console.log(`Cloudflare detected for ${url}, waiting up to 25s...`);
         await page.waitForFunction(
-          () => !document.title.includes('Just a moment') && !document.title.includes('Checking'),
-          { timeout: 20000 }
+          () => {
+            const t = document.title.toLowerCase();
+            return !t.includes('just a moment') && !t.includes('checking') && !t.includes('attention');
+          },
+          { timeout: 25000 }
         );
         // Extra wait after challenge resolves
         await page.waitForTimeout(3000);
