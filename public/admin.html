@@ -160,9 +160,10 @@ function renderWhitelist() {
 async function addKey() {
   const name = document.getElementById('new-key-name').value.trim();
   if (!name) return;
-  const arr = new Uint8Array(16);
-  crypto.getRandomValues(arr);
-  const key = 'sk-' + Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('');
+  // Generate random key (works on both HTTP and HTTPS)
+  let hex = '';
+  for (let i = 0; i < 32; i++) hex += Math.floor(Math.random() * 16).toString(16);
+  const key = 'sk-' + hex;
   cfg.api_keys.push({ key, name, created: new Date().toISOString().split('T')[0] });
   await api('PUT', '/admin/api/config', { api_keys: cfg.api_keys });
   document.getElementById('new-key-name').value = '';
