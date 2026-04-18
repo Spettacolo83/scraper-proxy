@@ -42,14 +42,13 @@ function fetchViaResidential(residentialUrl, targetUrl) {
 
     // In Tailscale userspace mode, use SOCKS5 proxy to reach tailnet IPs
     const opts = { timeout: 60000 };
+    const socksProxy = process.env.TAILSCALE_SOCKS5 || 'socks5://localhost:1055';
     try {
       const { SocksProxyAgent } = require('socks-proxy-agent');
-      const socksProxy = process.env.ALL_PROXY || 'socks5://localhost:1055';
       opts.agent = new SocksProxyAgent(socksProxy);
-      console.log('Using SOCKS5 proxy for residential request');
-    } catch {
-      // socks-proxy-agent not available, try direct connection
-      console.log('SOCKS5 agent not available, trying direct connection');
+      console.log(`Using SOCKS5 proxy (${socksProxy}) for: ${reqUrl}`);
+    } catch (e) {
+      console.log(`SOCKS5 agent error: ${e.message}, trying direct connection`);
     }
 
     const req = http.get(reqUrl, opts, (res) => {
