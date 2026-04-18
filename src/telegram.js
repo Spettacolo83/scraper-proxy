@@ -191,17 +191,26 @@ async function pollLoop() {
   if (!pollingActive) return;
 
   try {
+    console.log(`Polling getUpdates (offset: ${lastUpdateId + 1})...`);
     const result = await sendTelegramRequest('getUpdates', {
       offset: lastUpdateId + 1,
       timeout: 30,
       allowed_updates: ['callback_query', 'message']
     });
 
-    if (result && result.ok && result.result && result.result.length > 0) {
+    if (!result) {
+      console.log('Polling: null result');
+    } else if (!result.ok) {
+      console.log(`Polling: not ok: ${JSON.stringify(result)}`);
+    } else if (result.result && result.result.length > 0) {
+      console.log(`Polling: got ${result.result.length} updates`);
       for (const update of result.result) {
         lastUpdateId = update.update_id;
-        // Process using the same handler logic
-        await processUpdate(update);
+        try {
+          await processUpdate(update);
+        } catch (e) {
+          console.log(`Error processing update ${update.update_id}: ${e.message}`);
+        }
       }
     }
   } catch (e) {
