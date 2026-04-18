@@ -19,6 +19,12 @@ app.use(cookieSession({
   maxAge: 24 * 60 * 60 * 1000
 }));
 
+// Redirect / to admin dashboard
+app.get('/', (req, res) => res.redirect('/admin'));
+
+// Redirect /admin to /admin/admin.html (express.static doesn't serve index by default with this name)
+app.get('/admin', (req, res) => res.redirect('/admin/admin.html'));
+
 app.use('/admin', express.static(path.join(__dirname, '..', 'public')));
 
 app.get('/health', (req, res) => {
