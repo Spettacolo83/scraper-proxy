@@ -8,6 +8,8 @@ const scraper = require('./scraper');
 const { apiKeyAuth, adminAuth, adminLogin, adminLogout } = require('./auth');
 const rateLimiter = require('./rate-limiter');
 const logger = require('./logger');
+const sessionRoutes = require('./session-routes');
+const telegram = require('./telegram');
 
 config.load();
 
@@ -172,6 +174,19 @@ app.put('/admin/api/config', adminAuth, (req, res) => {
 
 app.get('/admin/api/logs', adminAuth, (req, res) => {
   res.json(logger.getLogs());
+});
+
+// Session management routes
+app.use('/session', sessionRoutes);
+
+// Telegram webhook
+app.post('/telegram/webhook', telegram.handleWebhook);
+
+// Register Telegram webhook
+app.get('/telegram/register', async (req, res) => {
+  const webhookUrl = 'https://scraper.followtheflowai.com/telegram/webhook';
+  const result = await telegram.registerWebhook(webhookUrl);
+  res.json(result);
 });
 
 const PORT = process.env.PORT || 3000;
