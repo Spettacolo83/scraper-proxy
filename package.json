@@ -10,7 +10,8 @@
   "dependencies": {
     "express": "^4.21.0",
     "playwright": "^1.52.0",
-    "cookie-session": "^2.1.0"
+    "cookie-session": "^2.1.0",
+    "socks-proxy-agent": "^8.0.4"
   },
   "engines": {
     "node": ">=20"

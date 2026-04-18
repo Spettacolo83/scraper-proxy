@@ -40,7 +40,19 @@ function fetchViaResidential(residentialUrl, targetUrl) {
     const encodedUrl = encodeURIComponent(targetUrl);
     const reqUrl = `${residentialUrl}/fetch?url=${encodedUrl}`;
 
-    const req = http.get(reqUrl, { timeout: 60000 }, (res) => {
+    // In Tailscale userspace mode, use SOCKS5 proxy to reach tailnet IPs
+    const opts = { timeout: 60000 };
+    try {
+      const { SocksProxyAgent } = require('socks-proxy-agent');
+      const socksProxy = process.env.ALL_PROXY || 'socks5://localhost:1055';
+      opts.agent = new SocksProxyAgent(socksProxy);
+      console.log('Using SOCKS5 proxy for residential request');
+    } catch {
+      // socks-proxy-agent not available, try direct connection
+      console.log('SOCKS5 agent not available, trying direct connection');
+    }
+
+    const req = http.get(reqUrl, opts, (res) => {
       let body = '';
       res.on('data', chunk => body += chunk);
       res.on('end', () => {
