@@ -54,6 +54,7 @@ async function handleWebhook(req, res) {
       });
 
       await queueApplication(jobId, chatId, update.callback_query.message.text);
+      await triggerApplicationRoutine(jobId);
 
     } else if (callbackData.startsWith('ignore_')) {
       await sendTelegramRequest('answerCallbackQuery', {
@@ -120,6 +121,45 @@ async function storeUserResponse(chatId, response, originalQuestion) {
   });
 
   config.update({ pending_responses: pendingResponses });
+}
+
+async function triggerApplicationRoutine(jobId) {
+  const cfg = config.get();
+  const token = cfg.application_routine_token;
+  if (!token) {
+    console.log('Application Routine token not configured — skipping trigger');
+    return;
+  }
+
+  const routineUrl = 'https://api.anthropic.com/v1/claude_code/routines/trig_016xFVeG4ReLFTrZdubpMsuB/fire';
+
+  return new Promise((resolve) => {
+    const data = JSON.stringify({
+      message: `Process application for job: ${jobId}. Read and follow the instructions in routine/application_prompt.md.`
+    });
+
+    const req = https.request(routineUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+        'Content-Length': Buffer.byteLength(data)
+      }
+    }, (res) => {
+      let body = '';
+      res.on('data', chunk => body += chunk);
+      res.on('end', () => {
+        console.log(`Application Routine triggered for ${jobId}: ${res.statusCode} ${body.substring(0, 200)}`);
+        resolve(true);
+      });
+    });
+    req.on('error', (e) => {
+      console.log(`Failed to trigger Application Routine: ${e.message}`);
+      resolve(false);
+    });
+    req.write(data);
+    req.end();
+  });
 }
 
 async function registerWebhook(webhookUrl) {
@@ -196,6 +236,7 @@ async function processUpdate(update) {
       });
 
       await queueApplication(jobId, chatId, update.callback_query.message.text);
+      await triggerApplicationRoutine(jobId);
 
     } else if (callbackData.startsWith('ignore_')) {
       await sendTelegramRequest('answerCallbackQuery', {
