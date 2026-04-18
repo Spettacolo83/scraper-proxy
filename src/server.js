@@ -1,6 +1,7 @@
 const express = require('express');
 const cookieSession = require('cookie-session');
 const crypto = require('crypto');
+const http = require('http');
 const path = require('path');
 const config = require('./config');
 const scraper = require('./scraper');
@@ -21,15 +22,50 @@ app.use(cookieSession({
 
 // Redirect / to admin dashboard
 app.get('/', (req, res) => res.redirect('/admin'));
-
-// Redirect /admin to /admin/admin.html (express.static doesn't serve index by default with this name)
 app.get('/admin', (req, res) => res.redirect('/admin/admin.html'));
-
 app.use('/admin', express.static(path.join(__dirname, '..', 'public')));
 
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', stats: rateLimiter.getStats() });
+  const cfg = config.get();
+  res.json({
+    status: 'ok',
+    stats: rateLimiter.getStats(),
+    residential_proxy: cfg.residential_proxy || null
+  });
 });
+
+// Forward request to residential proxy (Mac via Tailscale)
+function fetchViaResidential(residentialUrl, targetUrl) {
+  return new Promise((resolve, reject) => {
+    const encodedUrl = encodeURIComponent(targetUrl);
+    const reqUrl = `${residentialUrl}/fetch?url=${encodedUrl}`;
+
+    const req = http.get(reqUrl, { timeout: 60000 }, (res) => {
+      let body = '';
+      res.on('data', chunk => body += chunk);
+      res.on('end', () => {
+        try {
+          resolve(JSON.parse(body));
+        } catch (e) {
+          reject(new Error('Invalid JSON from residential proxy'));
+        }
+      });
+    });
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('Residential proxy timeout')); });
+  });
+}
+
+function needsResidentialProxy(url) {
+  const cfg = config.get();
+  const rp = cfg.residential_proxy;
+  if (!rp || !rp.enabled || !rp.domains || !rp.url) return false;
+
+  const hostname = new URL(url).hostname;
+  return rp.domains.some(domain =>
+    hostname === domain || hostname.endsWith('.' + domain)
+  );
+}
 
 app.get('/fetch', apiKeyAuth, async (req, res) => {
   const url = req.query.url;
@@ -64,12 +100,30 @@ app.get('/fetch', apiKeyAuth, async (req, res) => {
 
   rateLimiter.acquire();
   try {
-    const result = await scraper.fetchPage(url, format);
+    let result;
+
+    if (needsResidentialProxy(url)) {
+      // Route through Mac residential proxy via Tailscale
+      const rp = cfg.residential_proxy;
+      console.log(`Routing via residential proxy: ${url}`);
+      try {
+        result = await fetchViaResidential(rp.url, url);
+      } catch (err) {
+        // Fallback to local scraper if residential proxy is down
+        console.log(`Residential proxy failed (${err.message}), falling back to local`);
+        result = await scraper.fetchPage(url, format);
+      }
+    } else {
+      // Use local Playwright
+      result = await scraper.fetchPage(url, format);
+    }
+
     logger.log({
       url,
       api_key: req.apiKeyName,
       status: result.success ? result.status_code : 'error',
-      elapsed_ms: result.elapsed_ms
+      elapsed_ms: result.elapsed_ms,
+      via: needsResidentialProxy(url) ? 'residential' : 'local'
     });
     res.json(result);
   } catch (error) {
@@ -115,6 +169,10 @@ async function start() {
   await scraper.launch();
   app.listen(PORT, () => {
     console.log(`Scraper proxy running on port ${PORT}`);
+    const cfg = config.get();
+    if (cfg.residential_proxy && cfg.residential_proxy.enabled) {
+      console.log(`Residential proxy: ${cfg.residential_proxy.url} (${cfg.residential_proxy.domains.length} domains)`);
+    }
   });
 }
 

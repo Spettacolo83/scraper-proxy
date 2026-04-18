@@ -19,5 +19,15 @@
     "timeout_ms": 45000,
     "wait_after_load_ms": 3000,
     "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+  },
+  "residential_proxy": {
+    "enabled": true,
+    "url": "http://100.73.144.71:3100",
+    "domains": [
+      "indeed.com", "uk.indeed.com", "it.indeed.com", "de.indeed.com", "es.indeed.com", "fr.indeed.com",
+      "glassdoor.com", "www.glassdoor.com",
+      "monster.com", "www.monster.com",
+      "stepstone.de", "www.stepstone.de"
+    ]
   }
 }
