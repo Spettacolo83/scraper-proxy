@@ -134,9 +134,7 @@ async function triggerApplicationRoutine(jobId) {
   const routineUrl = 'https://api.anthropic.com/v1/claude_code/routines/trig_016xFVeG4ReLFTrZdubpMsuB/fire';
 
   return new Promise((resolve) => {
-    const data = JSON.stringify({
-      message: `Process application for job: ${jobId}. Read and follow the instructions in routine/application_prompt.md.`
-    });
+    const data = JSON.stringify({});
 
     const req = https.request(routineUrl, {
       method: 'POST',
